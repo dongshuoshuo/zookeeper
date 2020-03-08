@@ -18,10 +18,10 @@
 
 package org.apache.zookeeper.client;
 
+import org.apache.zookeeper.common.PathUtils;
+
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-
-import org.apache.zookeeper.common.PathUtils;
 
 /**
  * A parser for ZooKeeper Client connect strings.
@@ -46,14 +46,16 @@ public final class ConnectStringParser {
      *             for an invalid chroot path.
      */
     public ConnectStringParser(String connectString) {
-        // parse out chroot, if any
+        // parse out chroot, if any  是否有相对路径什么的
         int off = connectString.indexOf('/');
+        //如果有路径
         if (off >= 0) {
             String chrootPath = connectString.substring(off);
             // ignore "/" chroot spec, same as null
             if (chrootPath.length() == 1) {
                 this.chrootPath = null;
             } else {
+                //验证路径是否非法
                 PathUtils.validatePath(chrootPath);
                 this.chrootPath = chrootPath;
             }
@@ -61,10 +63,12 @@ public final class ConnectStringParser {
         } else {
             this.chrootPath = null;
         }
-
+        //按着逗号分隔记性解析
         String hostsList[] = connectString.split(",");
         for (String host : hostsList) {
+            //默认端口 2181
             int port = DEFAULT_PORT;
+            //查找最后一次ip和port分隔
             int pidx = host.lastIndexOf(':');
             if (pidx >= 0) {
                 // otherwise : is at the end of the string, ignore
@@ -73,6 +77,7 @@ public final class ConnectStringParser {
                 }
                 host = host.substring(0, pidx);
             }
+            //将解析后的ip和port放入serverAddress中取
             serverAddresses.add(InetSocketAddress.createUnresolved(host, port));
         }
     }

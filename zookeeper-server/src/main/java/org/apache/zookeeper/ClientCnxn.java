@@ -19,40 +19,10 @@
 package org.apache.zookeeper;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.ConnectException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import javax.security.auth.login.LoginException;
-import javax.security.sasl.SaslException;
-
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
-import org.apache.zookeeper.AsyncCallback.ACLCallback;
-import org.apache.zookeeper.AsyncCallback.Children2Callback;
-import org.apache.zookeeper.AsyncCallback.ChildrenCallback;
-import org.apache.zookeeper.AsyncCallback.DataCallback;
-import org.apache.zookeeper.AsyncCallback.MultiCallback;
-import org.apache.zookeeper.AsyncCallback.StatCallback;
-import org.apache.zookeeper.AsyncCallback.StringCallback;
-import org.apache.zookeeper.AsyncCallback.VoidCallback;
+import org.apache.zookeeper.AsyncCallback.*;
 import org.apache.zookeeper.OpResult.ErrorResult;
 import org.apache.zookeeper.Watcher.Event;
 import org.apache.zookeeper.Watcher.Event.EventType;
@@ -63,26 +33,24 @@ import org.apache.zookeeper.ZooKeeper.WatchRegistration;
 import org.apache.zookeeper.client.HostProvider;
 import org.apache.zookeeper.client.ZooKeeperSaslClient;
 import org.apache.zookeeper.common.Time;
-import org.apache.zookeeper.proto.AuthPacket;
-import org.apache.zookeeper.proto.ConnectRequest;
-import org.apache.zookeeper.proto.CreateResponse;
-import org.apache.zookeeper.proto.ExistsResponse;
-import org.apache.zookeeper.proto.GetACLResponse;
-import org.apache.zookeeper.proto.GetChildren2Response;
-import org.apache.zookeeper.proto.GetChildrenResponse;
-import org.apache.zookeeper.proto.GetDataResponse;
-import org.apache.zookeeper.proto.GetSASLRequest;
-import org.apache.zookeeper.proto.ReplyHeader;
-import org.apache.zookeeper.proto.RequestHeader;
-import org.apache.zookeeper.proto.SetACLResponse;
-import org.apache.zookeeper.proto.SetDataResponse;
-import org.apache.zookeeper.proto.SetWatches;
-import org.apache.zookeeper.proto.WatcherEvent;
+import org.apache.zookeeper.proto.*;
 import org.apache.zookeeper.server.ByteBufferInputStream;
 import org.apache.zookeeper.server.ZooKeeperThread;
 import org.apache.zookeeper.server.ZooTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.security.auth.login.LoginException;
+import javax.security.sasl.SaslException;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * This class manages the socket i/o for the client. ClientCnxn maintains a list
@@ -292,6 +260,9 @@ public class ClientCnxn {
             this.watchRegistration = watchRegistration;
         }
 
+        /**
+         * 真正的序列化 没有维护watcher进去
+         */
         public void createBB() {
             try {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -386,21 +357,21 @@ public class ClientCnxn {
     public ClientCnxn(String chrootPath, HostProvider hostProvider, int sessionTimeout, ZooKeeper zooKeeper,
             ClientWatchManager watcher, ClientCnxnSocket clientCnxnSocket,
             long sessionId, byte[] sessionPasswd, boolean canBeReadOnly) {
-        this.zooKeeper = zooKeeper;
-        this.watcher = watcher;
-        this.sessionId = sessionId;
-        this.sessionPasswd = sessionPasswd;
-        this.sessionTimeout = sessionTimeout;
-        this.hostProvider = hostProvider;
-        this.chrootPath = chrootPath;
+        this.zooKeeper = zooKeeper;//要关联的Zookeeper对象
+        this.watcher = watcher;//这个连接的watcher
+        this.sessionId = sessionId;//建立会话的sessionId 第一次创建是0
+        this.sessionPasswd = sessionPasswd; //建立会话的密码 一个内容为空的byte数组
+        this.sessionTimeout = sessionTimeout;//会话超时时间
+        this.hostProvider = hostProvider; //服务地址维护这
+        this.chrootPath = chrootPath; //相对路径隔离
 
         connectTimeout = sessionTimeout / hostProvider.size();
         readTimeout = sessionTimeout * 2 / 3;
         readOnly = canBeReadOnly;
-
+        //初始化 发送线程 守护线程
         sendThread = new SendThread(clientCnxnSocket);
+        //初始化事件接收线程  守护线程
         eventThread = new EventThread();
-
     }
 
     /**
@@ -418,7 +389,9 @@ public class ClientCnxn {
         disableAutoWatchReset = b;
     }
     public void start() {
+        //开启sendThread线程
         sendThread.start();
+        //开始EventThread线程
         eventThread.start();
     }
 
@@ -875,29 +848,38 @@ public class ClientCnxn {
             return clientCnxnSocket;
         }
 
+        /**
+         * 连接时 调用
+         * @throws IOException
+         */
         void primeConnection() throws IOException {
             LOG.info("Socket connection established to "
                      + clientCnxnSocket.getRemoteSocketAddress()
                      + ", initiating session");
             isFirstConnect = false;
             long sessId = (seenRwServerBefore) ? sessionId : 0;
+            //构建ConnectRequest 连接请求的头
             ConnectRequest conReq = new ConnectRequest(0, lastZxid,
                     sessionTimeout, sessId, sessionPasswd);
+            //发送队列加锁
             synchronized (outgoingQueue) {
                 // We add backwards since we are pushing into the front
                 // Only send if there's a pending watch
                 // TODO: here we have the only remaining use of zooKeeper in
                 // this class. It's to be eliminated!
-                if (!disableAutoWatchReset) {
+                if (!disableAutoWatchReset) {  //是否开启自动watch重置
+                    //获取此时 ZkWatchManager 所有watch
                     List<String> dataWatches = zooKeeper.getDataWatches();
                     List<String> existWatches = zooKeeper.getExistWatches();
                     List<String> childWatches = zooKeeper.getChildWatches();
+                    //如果不为空
                     if (!dataWatches.isEmpty()
                                 || !existWatches.isEmpty() || !childWatches.isEmpty()) {
-
+                        //对 有相对路径的进行
                         Iterator<String> dataWatchesIter = prependChroot(dataWatches).iterator();
                         Iterator<String> existWatchesIter = prependChroot(existWatches).iterator();
                         Iterator<String> childWatchesIter = prependChroot(childWatches).iterator();
+                        //上次的事务id
                         long setWatchesLastZxid = lastZxid;
 
                         while (dataWatchesIter.hasNext()
@@ -925,25 +907,29 @@ public class ClientCnxn {
                                 }
                                 batchLength += watch.length();
                             }
-
+                            //构建序列化信息 Jute序列化 必须实现Record
                             SetWatches sw = new SetWatches(setWatchesLastZxid,
                                     dataWatchesBatch,
                                     existWatchesBatch,
                                     childWatchesBatch);
+                            //请求头
                             RequestHeader h = new RequestHeader();
                             h.setType(ZooDefs.OpCode.setWatches);
                             h.setXid(-8);
+                            //构建请求packet
                             Packet packet = new Packet(h, new ReplyHeader(), sw, null, null);
+                            //放入发送队列中
                             outgoingQueue.addFirst(packet);
                         }
                     }
                 }
-
+                //ACL权限验证
                 for (AuthData id : authInfo) {
                     outgoingQueue.addFirst(new Packet(new RequestHeader(-4,
                             OpCode.auth), null, new AuthPacket(0, id.scheme,
                             id.data), null, null));
                 }
+                //连接请求ConnectRequest
                 outgoingQueue.addFirst(new Packet(null, null, conReq,
                             null, null, readOnly));
             }
@@ -971,6 +957,9 @@ public class ClientCnxn {
             return paths;
         }
 
+        /**
+         * 发送ping请求
+         */
         private void sendPing() {
             lastPingSentNs = System.nanoTime();
             RequestHeader h = new RequestHeader(-2, OpCode.ping);
@@ -992,10 +981,12 @@ public class ClientCnxn {
         private void startConnect(InetSocketAddress addr) throws IOException {
             // initializing it for new connection
             saslLoginFailed = false;
+            //更新state 状态为   正在连接
             state = States.CONNECTING;
-
+            //设置线程名
             setName(getName().replaceAll("\\(.*\\)",
                     "(" + addr.getHostName() + ":" + addr.getPort() + ")"));
+            //Zookeeper SASL 管理 是否已启用 默认是
             if (ZooKeeperSaslClient.isEnabled()) {
                 try {
                     zooKeeperSaslClient = new ZooKeeperSaslClient(SaslServerPrincipal.getServerPrincipal(addr));
@@ -1012,8 +1003,9 @@ public class ClientCnxn {
                     saslLoginFailed = true;
                 }
             }
+            //开始连接日志
             logStartConnect(addr);
-
+            //准备连接 模板模式
             clientCnxnSocket.connect(addr);
         }
 
@@ -1030,16 +1022,23 @@ public class ClientCnxn {
         
         @Override
         public void run() {
+            //ClientCnxnSocket维护 当前sendThread对象和sessionId
             clientCnxnSocket.introduce(this,sessionId);
+            //更新当前时间
             clientCnxnSocket.updateNow();
+            //更新lastSend 和 lastHeart
             clientCnxnSocket.updateLastSendAndHeard();
             int to;
             long lastPingRwServer = Time.currentElapsedTime();
+            //最大ping 间隔
             final int MAX_SEND_PING_INTERVAL = 10000; //10 seconds
             InetSocketAddress serverAddress = null;
+            //当前状态不为closed和auth_failed
             while (state.isAlive()) {
                 try {
+                    //如果没有连接
                     if (!clientCnxnSocket.isConnected()) {
+                        //不是第一次连接
                         if(!isFirstConnect){
                             try {
                                 Thread.sleep(r.nextInt(1000));
@@ -1047,22 +1046,25 @@ public class ClientCnxn {
                                 LOG.warn("Unexpected exception", e);
                             }
                         }
-                        // don't re-establish connection if we are closing
+                        // don't re-establish connection if we are closing 已经关闭了就结束
                         if (closing || !state.isAlive()) {
                             break;
                         }
+                        //如果rwServerAddress不为null
                         if (rwServerAddress != null) {
                             serverAddress = rwServerAddress;
                             rwServerAddress = null;
                         } else {
                             serverAddress = hostProvider.next(1000);
                         }
+                        //开始建立会话连接
                         startConnect(serverAddress);
+                        //修改时间
                         clientCnxnSocket.updateLastSendAndHeard();
                     }
-
+                    //已连接 CONNECTED CONNECTEDREADONLY
                     if (state.isConnected()) {
-                        // determine whether we need to send an AuthFailed event.
+                        // determine whether we need to send an AuthFailed event.确定是否需要发送权限失败事件
                         if (zooKeeperSaslClient != null) {
                             boolean sendAuthEvent = false;
                             if (zooKeeperSaslClient.getSaslState() == ZooKeeperSaslClient.SaslState.INITIAL) {
@@ -1097,7 +1099,7 @@ public class ClientCnxn {
                     } else {
                         to = connectTimeout - clientCnxnSocket.getIdleRecv();
                     }
-                    
+                    //时间差小于0 超时了
                     if (to <= 0) {
                         String warnInfo;
                         warnInfo = "Client session timed out, have not heard from server in "
@@ -1108,9 +1110,11 @@ public class ClientCnxn {
                         LOG.warn(warnInfo);
                         throw new SessionTimeoutException(warnInfo);
                     }
+                    //this == CONNECTED || this == CONNECTEDREADONL
                     if (state.isConnected()) {
                     	//1000(1 second) is to prevent race condition missing to send the second ping
-                    	//also make sure not to send too many pings when readTimeout is small 
+                    	//also make sure not to send too many pings when readTimeout is small
+                        //1s是避免 丢失 进行第二次ping如果readTimeout太小 要避免发送太多ping
                         int timeToNextPing = readTimeout / 2 - clientCnxnSocket.getIdleSend() - 
                         		((clientCnxnSocket.getIdleSend() > 1000) ? 1000 : 0);
                         //send a ping request either time is due or no packet sent out within MAX_SEND_PING_INTERVAL
@@ -1125,6 +1129,7 @@ public class ClientCnxn {
                     }
 
                     // If we are in read-only mode, seek for read/write server
+                    //如果是readOnly 模型, 需要找读写服务
                     if (state == States.CONNECTEDREADONLY) {
                         long now = Time.currentElapsedTime();
                         int idlePingRwServer = (int) (now - lastPingRwServer);
@@ -1133,11 +1138,12 @@ public class ClientCnxn {
                             idlePingRwServer = 0;
                             pingRwTimeout =
                                 Math.min(2*pingRwTimeout, maxPingRwTimeout);
+                            //ping 读写服务
                             pingRwServer();
                         }
                         to = Math.min(to, pingRwTimeout - idlePingRwServer);
                     }
-
+                    //做传输操作
                     clientCnxnSocket.doTransport(to, pendingQueue, outgoingQueue, ClientCnxn.this);
                 } catch (Throwable e) {
                     if (closing) {
@@ -1179,6 +1185,7 @@ public class ClientCnxn {
                     }
                 }
             }
+            //关闭连接
             cleanup();
             clientCnxnSocket.close();
             if (state.isAlive()) {
@@ -1293,6 +1300,7 @@ public class ClientCnxn {
             hostProvider.onConnected();
             sessionId = _sessionId;
             sessionPasswd = _sessionPasswd;
+            //更新状态
             state = (isRO) ?
                     States.CONNECTEDREADONLY : States.CONNECTED;
             seenRwServerBefore |= !isRO;
@@ -1385,7 +1393,7 @@ public class ClientCnxn {
 
     private int xid = 1;
 
-    // @VisibleForTesting
+    // @VisibleForTesting 默认状态 是 not_connected
     volatile States state = States.NOT_CONNECTED;
 
     /*

@@ -18,18 +18,14 @@
 
 package org.apache.zookeeper.client;
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.util.*;
 
 /**
  * Most simple HostProvider, resolves on every next() call.
@@ -65,6 +61,7 @@ public final class StaticHostProvider implements HostProvider {
      *             if serverAddresses is empty or resolves to an empty list
      */
     public StaticHostProvider(Collection<InetSocketAddress> serverAddresses) {
+        //resolver的默认实现
         this.resolver = new Resolver() {
             @Override
             public InetAddress[] getAllByName(String name) throws UnknownHostException {
@@ -91,7 +88,7 @@ public final class StaticHostProvider implements HostProvider {
     }
 
     /**
-     * Common init method for all constructors.
+     * Common init method for all constructors.  初始化地址 ,解析所有未解析的服务地址,并把他们放入list中去 使用了 Collections.shuffle进行随机打散
      * Resolve all unresolved server addresses, put them in a list and shuffle.
      */
     private void init(Collection<InetSocketAddress> serverAddresses) {
@@ -120,6 +117,7 @@ public final class StaticHostProvider implements HostProvider {
         if (addr == null) {
             return hostString;
         }
+        //如果没有解析
         if (!addr.isUnresolved()) {
             InetAddress ia = addr.getAddress();
 
@@ -145,8 +143,15 @@ public final class StaticHostProvider implements HostProvider {
         return serverAddresses.size();
     }
 
+    /**
+     * 获取下一个服务地址
+     * @param spinDelay 延迟获取
+     * @return
+     */
     public InetSocketAddress next(long spinDelay) {
+        //判断该当前服务地址
         currentIndex = ++currentIndex % serverAddresses.size();
+        //如果当前的和上次的一样 就证明只有一个服务地  且需要延迟
         if (currentIndex == lastIndex && spinDelay > 0) {
             try {
                 Thread.sleep(spinDelay);
@@ -154,18 +159,23 @@ public final class StaticHostProvider implements HostProvider {
                 LOG.warn("Unexpected exception", e);
             }
         } else if (lastIndex == -1) {
-            // We don't want to sleep on the first ever connect attempt.
+            // We don't want to sleep on the first ever connect attempt. 第一次初始化
             lastIndex = 0;
         }
-
+        //获取服务地址
         InetSocketAddress curAddr = serverAddresses.get(currentIndex);
         try {
+            //当前的ip或者域名
             String curHostString = getHostString(curAddr);
+            //如果是ip直接返回,是域名需解析返回
             List<InetAddress> resolvedAddresses = new ArrayList<InetAddress>(Arrays.asList(this.resolver.getAllByName(curHostString)));
+            //如果未找到对应的 返回serverAddress中的
             if (resolvedAddresses.isEmpty()) {
                 return curAddr;
             }
+            //随机打散
             Collections.shuffle(resolvedAddresses);
+            //返回第一个
             return new InetSocketAddress(resolvedAddresses.get(0), curAddr.getPort());
         } catch (UnknownHostException e) {
             return curAddr;

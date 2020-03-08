@@ -18,6 +18,12 @@
 
 package org.apache.zookeeper;
 
+import org.apache.zookeeper.ClientCnxn.EndOfStreamException;
+import org.apache.zookeeper.ClientCnxn.Packet;
+import org.apache.zookeeper.ZooDefs.OpCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -29,12 +35,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Set;
-
-import org.apache.zookeeper.ClientCnxn.EndOfStreamException;
-import org.apache.zookeeper.ClientCnxn.Packet;
-import org.apache.zookeeper.ZooDefs.OpCode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class ClientCnxnSocketNIO extends ClientCnxnSocket {
     private static final Logger LOG = LoggerFactory
@@ -64,6 +64,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         if (sock == null) {
             throw new IOException("Socket is null!");
         }
+        //如果是读
         if (sockKey.isReadable()) {
             int rc = sock.read(incomingBuffer);
             if (rc < 0) {
@@ -78,6 +79,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
                     recvCount++;
                     readLength();
                 } else if (!initialized) {
+                    //读取连接结果
                     readConnectResult();
                     enableRead();
                     if (findSendablePacket(outgoingQueue,
@@ -100,6 +102,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         }
         if (sockKey.isWritable()) {
             synchronized(outgoingQueue) {
+                //寻找可发送的 第一个packet
                 Packet p = findSendablePacket(outgoingQueue,
                         cnxn.sendThread.clientTunneledAuthenticationInProgress());
 
@@ -159,6 +162,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
             if (outgoingQueue.isEmpty()) {
                 return null;
             }
+            //translate 当第一个packet已经开始发送了 , 我们应该先把它发送完成
             if (outgoingQueue.getFirst().bb != null // If we've already starting sending the first packet, we better finish
                 || !clientTunneledAuthenticationInProgress) {
                 return outgoingQueue.getFirst();
@@ -172,6 +176,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
             ListIterator<Packet> iter = outgoingQueue.listIterator();
             while (iter.hasNext()) {
                 Packet p = iter.next();
+                //如果是 requestHeader为null
                 if (p.requestHeader == null) {
                     // We've found the priming-packet. Move it to the beginning of the queue.
                     iter.remove();
@@ -252,7 +257,7 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
     }
     
     /**
-     * create a socket channel.
+     * create a socket channel. 创建一个socket 渠道
      * @return the created socket channel
      * @throws IOException
      */
@@ -266,34 +271,41 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
     }
 
     /**
-     * register with the selection and connect
+     * register with the selection and connect 注册并连接
      * @param sock the {@link SocketChannel} 
      * @param addr the address of remote host
      * @throws IOException
      */
     void registerAndConnect(SocketChannel sock, InetSocketAddress addr) 
     throws IOException {
+        //注册
         sockKey = sock.register(selector, SelectionKey.OP_CONNECT);
+        //连接地址
         boolean immediateConnect = sock.connect(addr);
+        //连接成功后
         if (immediateConnect) {
+            //sendThread连接
             sendThread.primeConnection();
         }
     }
     
     @Override
     void connect(InetSocketAddress addr) throws IOException {
+        //创建socket java原生nio
         SocketChannel sock = createSock();
         try {
+            //注册并且连接
            registerAndConnect(sock, addr);
         } catch (IOException e) {
             LOG.error("Unable to open socket to " + addr);
             sock.close();
             throw e;
         }
+        //初始化设为false
         initialized = false;
 
         /*
-         * Reset incomingBuffer
+         * Reset incomingBuffer 重启入库缓冲区
          */
         lenBuffer.clear();
         incomingBuffer = lenBuffer;
@@ -357,11 +369,13 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
         updateNow();
         for (SelectionKey k : selected) {
             SocketChannel sc = ((SocketChannel) k.channel());
+            //如果是 连接操作
             if ((k.readyOps() & SelectionKey.OP_CONNECT) != 0) {
                 if (sc.finishConnect()) {
                     updateLastSendAndHeard();
                     sendThread.primeConnection();
                 }
+                //如果是 读或者写
             } else if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
                 doIO(pendingQueue, outgoingQueue, cnxn);
             }

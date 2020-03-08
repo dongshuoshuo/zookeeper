@@ -137,7 +137,9 @@ public class ZooKeeper {
             new HashMap<String, Set<Watcher>>();
         private final Map<String, Set<Watcher>> childWatches =
             new HashMap<String, Set<Watcher>>();
-
+        /**
+         * 会话默认的watcher 即new Zookeeper传入的watcher
+         */
         private volatile Watcher defaultWatcher;
 
         final private void addTo(Set<Watcher> from, Set<Watcher> to) {
@@ -441,16 +443,19 @@ public class ZooKeeper {
     {
         LOG.info("Initiating client connection, connectString=" + connectString
                 + " sessionTimeout=" + sessionTimeout + " watcher=" + watcher);
-
+        //将传入的watcher
         watchManager.defaultWatcher = watcher;
-
+        //解析connectString信息
         ConnectStringParser connectStringParser = new ConnectStringParser(
                 connectString);
+        //初始化服务器地址管理器StaticHostProvider
         HostProvider hostProvider = new StaticHostProvider(
                 connectStringParser.getServerAddresses());
+        //初始化客户端的网络I/O
         cnxn = new ClientCnxn(connectStringParser.getChrootPath(),
                 hostProvider, sessionTimeout, this, watchManager,
                 getClientCnxnSocket(), canBeReadOnly);
+        //调用ClientCnxn的start方法
         cnxn.start();
     }
 
@@ -1838,6 +1843,11 @@ public class ZooKeeper {
         return cnxn.sendThread.getClientCnxnSocket().getLocalSocketAddress();
     }
 
+    /**
+     * 获取真正的客户端网络i/o执行者
+     * @return
+     * @throws IOException
+     */
     private static ClientCnxnSocket getClientCnxnSocket() throws IOException {
         String clientCnxnSocketName = System
                 .getProperty(ZOOKEEPER_CLIENT_CNXN_SOCKET);
