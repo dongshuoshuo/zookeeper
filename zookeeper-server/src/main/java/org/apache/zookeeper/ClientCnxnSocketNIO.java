@@ -353,7 +353,16 @@ public class ClientCnxnSocketNIO extends ClientCnxnSocket {
     synchronized void wakeupCnxn() {
         selector.wakeup();
     }
-    
+
+    /**
+     * 发送信息等操作
+     * @param waitTimeOut
+     * @param pendingQueue
+     * @param outgoingQueue
+     * @param cnxn
+     * @throws IOException
+     * @throws InterruptedException
+     */
     @Override
     void doTransport(int waitTimeOut, List<Packet> pendingQueue, LinkedList<Packet> outgoingQueue,
                      ClientCnxn cnxn)

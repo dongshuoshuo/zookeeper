@@ -474,10 +474,12 @@ public class ClientCnxn {
            try {
               isRunning = true;
               while (true) {
+                  //阻塞 取一个元素
                  Object event = waitingEvents.take();
                  if (event == eventOfDeath) {
                     wasKilled = true;
                  } else {
+                     //执行这个服务端反馈事件
                     processEvent(event);
                  }
                  if (wasKilled)
@@ -496,6 +498,10 @@ public class ClientCnxn {
                      Long.toHexString(getSessionId()));
         }
 
+        /**
+         * 执行服务端反馈事件
+         * @param event
+         */
        private void processEvent(Object event) {
           try {
               if (event instanceof WatcherSetEventPair) {
@@ -503,6 +509,7 @@ public class ClientCnxn {
                   WatcherSetEventPair pair = (WatcherSetEventPair) event;
                   for (Watcher watcher : pair.watchers) {
                       try {
+                          //执行watcher的process方法
                           watcher.process(pair.event);
                       } catch (Throwable t) {
                           LOG.error("Error while calling watcher ", t);
@@ -512,9 +519,11 @@ public class ClientCnxn {
                   Packet p = (Packet) event;
                   int rc = 0;
                   String clientPath = p.clientPath;
+                  //响应错误吗
                   if (p.replyHeader.getErr() != 0) {
                       rc = p.replyHeader.getErr();
                   }
+                  //回调
                   if (p.cb == null) {
                       LOG.warn("Somehow a null cb got to EventThread!");
                   } else if (p.response instanceof ExistsResponse
@@ -933,6 +942,7 @@ public class ClientCnxn {
                 outgoingQueue.addFirst(new Packet(null, null, conReq,
                             null, null, readOnly));
             }
+            //socket启动读写操作
             clientCnxnSocket.enableReadWriteOnly();
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Session establishment request sent on "
@@ -1057,7 +1067,7 @@ public class ClientCnxn {
                         } else {
                             serverAddress = hostProvider.next(1000);
                         }
-                        //开始建立会话连接
+                        //第一次 开始建立会话连接
                         startConnect(serverAddress);
                         //修改时间
                         clientCnxnSocket.updateLastSendAndHeard();
