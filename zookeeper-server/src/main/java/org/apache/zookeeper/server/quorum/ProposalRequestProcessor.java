@@ -34,7 +34,9 @@ public class ProposalRequestProcessor implements RequestProcessor {
         LoggerFactory.getLogger(ProposalRequestProcessor.class);
 
     LeaderZooKeeperServer zks;
-    
+    /**
+     * commit
+     */
     RequestProcessor nextProcessor;
 
     SyncRequestProcessor syncProcessor;
@@ -53,7 +55,12 @@ public class ProposalRequestProcessor implements RequestProcessor {
     public void initialize() {
         syncProcessor.start();
     }
-    
+
+    /**
+     * ProposalRequestProcessor 处理
+     * @param request
+     * @throws RequestProcessorException
+     */
     public void processRequest(Request request) throws RequestProcessorException {
         // LOG.warn("Ack>>> cxid = " + request.cxid + " type = " +
         // request.type + " id = " + request.sessionId);
@@ -71,14 +78,17 @@ public class ProposalRequestProcessor implements RequestProcessor {
         if(request instanceof LearnerSyncRequest){
             zks.getLeader().processSync((LearnerSyncRequest)request);
         } else {
+                //提交给commitRequestProcessor
                 nextProcessor.processRequest(request);
             if (request.hdr != null) {
                 // We need to sync and get consensus on any transactions
                 try {
+                    //给Follower发送提案
                     zks.getLeader().propose(request);
                 } catch (XidRolloverException e) {
                     throw new RequestProcessorException(e.getMessage(), e);
                 }
+                //交给SyncRequestProcessor
                 syncProcessor.processRequest(request);
             }
         }

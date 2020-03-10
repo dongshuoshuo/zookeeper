@@ -18,29 +18,6 @@
 
 package org.apache.zookeeper.server.quorum;
 
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.net.BindException;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicLong;
-
-import javax.security.sasl.SaslException;
-
-import org.apache.jute.BinaryOutputArchive;
 import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.server.FinalRequestProcessor;
 import org.apache.zookeeper.server.Request;
@@ -52,6 +29,16 @@ import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.server.util.ZxidUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.security.sasl.SaslException;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * This class has the control logic for the Leader.
@@ -306,9 +293,13 @@ public class Leader {
      * This message type informs observers of a committed proposal.
      */
     final static int INFORM = 8;
-
+    /**
+     * 投递箱
+     */
     ConcurrentMap<Long, Proposal> outstandingProposals = new ConcurrentHashMap<Long, Proposal>();
-
+    /**
+     * 处理可被提交的提案
+     */
     ConcurrentLinkedQueue<Proposal> toBeApplied = new ConcurrentLinkedQueue<Proposal>();
 
     Proposal newLeaderProposal = new Proposal();
@@ -369,7 +360,7 @@ public class Leader {
     
     /**
      * This method is main function that is called to lead
-     * 
+     *  这个方法 主要是被leader调用
      * @throws IOException
      * @throws InterruptedException
      */
@@ -435,7 +426,7 @@ public class Leader {
                 self.tick.incrementAndGet();
                 return;
             }
-            
+            //开启ZookeeperServer
             startZkServer();
             
             /**
@@ -608,6 +599,7 @@ public class Leader {
             LOG.debug("Count for zxid: 0x{} is {}",
                     Long.toHexString(zxid), p.ackSet.size());
         }
+        //验证是否提案过半
         if (self.getQuorumVerifier().containsQuorum(p.ackSet)){             
             if (zxid != lastCommitted+1) {
                 LOG.warn("Commiting zxid 0x{} from {} not first!",
@@ -624,6 +616,7 @@ public class Leader {
             }
             commit(zxid);
             inform(p);
+            //放入可提交队列
             zk.commitProcessor.commit(p.request);
             if(pendingSyncs.containsKey(zxid)){
                 for(LearnerSyncRequest r: pendingSyncs.remove(zxid)) {
@@ -668,7 +661,9 @@ public class Leader {
          */
         public void processRequest(Request request) throws RequestProcessorException {
             // request.addRQRec(">tobe");
+            //交给FinalRequestProcessor处理
             next.processRequest(request);
+            //从可以被应用的中取出一个, 如果是同一个事物则删除
             Proposal p = toBeApplied.peek();
             if (p != null && p.request != null
                     && p.request.zxid == request.zxid) {
@@ -957,6 +952,7 @@ public class Leader {
 
     /**
      * Start up Leader ZooKeeper server and initialize zxid to the new epoch
+     * 开启leader Zookeeper服务 并且初始化zxid作为新一轮的epoch
      */
     private synchronized void startZkServer() {
         // Update lastCommitted and Db's zxid to a value representing the new epoch

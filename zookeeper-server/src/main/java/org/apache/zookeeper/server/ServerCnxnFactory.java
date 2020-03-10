@@ -18,6 +18,17 @@
 
 package org.apache.zookeeper.server;
 
+import org.apache.zookeeper.Environment;
+import org.apache.zookeeper.Login;
+import org.apache.zookeeper.jmx.MBeanRegistry;
+import org.apache.zookeeper.server.auth.SaslServerCallbackHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.management.JMException;
+import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.auth.login.Configuration;
+import javax.security.auth.login.LoginException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -25,19 +36,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-
-import javax.security.auth.login.Configuration;
-import javax.security.auth.login.LoginException;
-import javax.security.auth.login.AppConfigurationEntry;
-
-import javax.management.JMException;
-
-import org.apache.zookeeper.Login;
-import org.apache.zookeeper.Environment;
-import org.apache.zookeeper.jmx.MBeanRegistry;
-import org.apache.zookeeper.server.auth.SaslServerCallbackHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public abstract class ServerCnxnFactory {
 
@@ -104,11 +102,18 @@ public abstract class ServerCnxnFactory {
     }
 
     public abstract void closeAll();
-    
+
+    /**
+     * 创建ServerCnxnFactory工厂
+     * @return
+     * @throws IOException
+     */
     static public ServerCnxnFactory createFactory() throws IOException {
+        //可以通过系统配置修改
         String serverCnxnFactoryName =
             System.getProperty(ZOOKEEPER_SERVER_CNXN_FACTORY);
         if (serverCnxnFactoryName == null) {
+            //默认是NIOServerCnxnFactory
             serverCnxnFactoryName = NIOServerCnxnFactory.class.getName();
         }
         try {
@@ -169,7 +174,7 @@ public abstract class ServerCnxnFactory {
     }
 
     /**
-     * Initialize the server SASL if specified.
+     * Initialize the server SASL if specified. 初始化服务SASL
      *
      * If the user has specified a "ZooKeeperServer.LOGIN_CONTEXT_NAME_KEY"
      * or a jaas.conf using "java.security.auth.login.config"

@@ -18,23 +18,20 @@
 
 package org.apache.zookeeper.server;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map.Entry;
-import java.util.concurrent.ConcurrentHashMap;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.SessionExpiredException;
 import org.apache.zookeeper.common.Time;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ *  这是一个完整的SessionTracker实现 ,通过tick建个对session进行分组
  * This is a full featured SessionTracker. It tracks session in grouped by tick
  * interval. It always rounds up the tick interval to provide a sort of grace
  * period. Sessions are thus expired in batches made up of sessions that expire
@@ -42,11 +39,17 @@ import org.apache.zookeeper.common.Time;
  */
 public class SessionTrackerImpl extends ZooKeeperCriticalThread implements SessionTracker {
     private static final Logger LOG = LoggerFactory.getLogger(SessionTrackerImpl.class);
-
+    /**
+     * sessionId->实现
+     */
     HashMap<Long, SessionImpl> sessionsById = new HashMap<Long, SessionImpl>();
-
+    /**
+     * 分桶策略
+     */
     HashMap<Long, SessionSet> sessionSets = new HashMap<Long, SessionSet>();
-
+    /**
+     * sessionId 过期时间
+     */
     ConcurrentHashMap<Long, Integer> sessionsWithTimeout;
     long nextSessionId = 0;
     long nextExpirationTime;
@@ -138,6 +141,9 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
         return sw.toString();
     }
 
+    /**
+     * 清理会话
+     */
     @Override
     synchronized public void run() {
         try {
@@ -163,6 +169,12 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
         LOG.info("SessionTrackerImpl exited loop!");
     }
 
+    /**
+     * 判断是否能与session关联到一起
+     * @param sessionId
+     * @param timeout
+     * @return
+     */
     synchronized public boolean touchSession(long sessionId, int timeout) {
         if (LOG.isTraceEnabled()) {
             ZooTrace.logTraceMessage(LOG,
@@ -175,6 +187,7 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements Sessi
         if (s == null || s.isClosing()) {
             return false;
         }
+        //计算超时时间的公式
         long expireTime = roundToInterval(Time.currentElapsedTime() + timeout);
         if (s.tickTime >= expireTime) {
             // Nothing needs to be done

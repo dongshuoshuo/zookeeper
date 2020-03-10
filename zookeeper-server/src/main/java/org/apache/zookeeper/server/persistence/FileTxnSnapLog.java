@@ -18,13 +18,6 @@
 
 package org.apache.zookeeper.server.persistence;
 
-import java.io.File;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 import org.apache.jute.Record;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
@@ -39,6 +32,13 @@ import org.apache.zookeeper.txn.CreateSessionTxn;
 import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * This is a helper class 
@@ -108,7 +108,7 @@ public class FileTxnSnapLog {
             checkLogDir();
             checkSnapDir();
         }
-
+        //构造事务日志和快照日志
         txnLog = new FileTxnLog(this.dataDir);
         snapLog = new FileSnap(this.snapDir);
     }
@@ -163,6 +163,7 @@ public class FileTxnSnapLog {
      * this function restores the server 
      * database after reading from the 
      * snapshots and transaction logs
+     * 从快照和事务日志中回复数据
      * @param dt the datatree to be restored
      * @param sessions the sessions to be restored
      * @param listener the playback listener to run on the 

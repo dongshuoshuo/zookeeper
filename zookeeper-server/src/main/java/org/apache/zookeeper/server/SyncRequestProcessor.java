@@ -18,14 +18,14 @@
 
 package org.apache.zookeeper.server;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.Flushable;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.Random;
 import java.util.concurrent.LinkedBlockingQueue;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * This RequestProcessor logs requests to disk. It batches the requests to do
@@ -58,11 +58,12 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
      * Transactions that have been written and are waiting to be flushed to
      * disk. Basically this is the list of SyncItems whose callbacks will be
      * invoked after flush returns successfully.
+     * 已写入等待刷新到磁盘,
      */
     private final LinkedList<Request> toFlush = new LinkedList<Request>();
     private final Random r = new Random(System.nanoTime());
     /**
-     * The number of log entries to log before starting a snapshot
+     * The number of log entries to log before starting a snapshot 记录多少事务日志进行一次快照
      */
     private static int snapCount = ZooKeeperServer.getSnapCount();
     
@@ -123,6 +124,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
             setRandRoll(r.nextInt(snapCount/2));
             while (true) {
                 Request si = null;
+                //刷新到磁盘的为null
                 if (toFlush.isEmpty()) {
                     si = queuedRequests.take();
                 } else {
@@ -136,9 +138,10 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
                     break;
                 }
                 if (si != null) {
-                    // track the number of records written to the log
+                    // track the number of records written to the log 写入事务日志
                     if (zks.getZKDatabase().append(si)) {
                         logCount++;
+                        //当事务日志数量 大于 创建一个新的事务日志
                         if (logCount > (snapCount / 2 + randRoll)) {
                             setRandRoll(r.nextInt(snapCount/2));
                             // roll the log
@@ -147,6 +150,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
                             if (snapInProcess != null && snapInProcess.isAlive()) {
                                 LOG.warn("Too busy to snap, skipping");
                             } else {
+                                //创建一个快照
                                 snapInProcess = new ZooKeeperThread("Snapshot Thread") {
                                         public void run() {
                                             try {
@@ -160,6 +164,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
                             }
                             logCount = 0;
                         }
+
                     } else if (toFlush.isEmpty()) {
                         // optimization for read heavy workloads
                         // iff this is a read, and there are no pending
@@ -173,7 +178,9 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
                         }
                         continue;
                     }
+                    //待刷入的日志
                     toFlush.add(si);
+                    //大于1000直接刷入日志
                     if (toFlush.size() > 1000) {
                         flush(toFlush);
                     }

@@ -18,16 +18,16 @@
 
 package org.apache.zookeeper.server.quorum;
 
-import java.util.ArrayList;
-import java.util.LinkedList;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.RequestProcessor;
 import org.apache.zookeeper.server.ZooKeeperCriticalThread;
 import org.apache.zookeeper.server.ZooKeeperServerListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
 
 /**
  * This RequestProcessor matches the incoming committed requests with the
@@ -72,6 +72,7 @@ public class CommitProcessor extends ZooKeeperCriticalThread implements RequestP
         try {
             Request nextPending = null;            
             while (!finished) {
+                //可以处理的
                 int len = toProcess.size();
                 for (int i = 0; i < len; i++) {
                     nextProcessor.processRequest(toProcess.get(i));

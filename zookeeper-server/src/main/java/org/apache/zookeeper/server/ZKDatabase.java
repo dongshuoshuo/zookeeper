@@ -18,24 +18,9 @@
 
 package org.apache.zookeeper.server;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
-
-import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
 import org.apache.jute.Record;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.Watcher;
@@ -49,6 +34,19 @@ import org.apache.zookeeper.server.quorum.Leader.Proposal;
 import org.apache.zookeeper.server.quorum.QuorumPacket;
 import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.txn.TxnHeader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.ReadLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock.WriteLock;
 
 /**
  * This class maintains the in memory database of zookeeper
@@ -208,6 +206,7 @@ public class ZKDatabase {
     };
 
     /**
+     * 从磁盘加载内存数据库
      * load the database from the disk onto memory and also add 
      * the transactions to the committedlog in memory.
      * @return the last valid zxid on disk
@@ -239,6 +238,7 @@ public class ZKDatabase {
     }
 
     /**
+     * 维持一个待提交的或已提交的request
      * maintains a list of last <i>committedLog</i>
      *  or so committed requests. This is used for
      * fast follower synchronization.
@@ -263,6 +263,7 @@ public class ZKDatabase {
             Proposal p = new Proposal();
             p.packet = pp;
             p.request = request;
+            //放入到committedLog中取
             committedLog.add(p);
             maxCommittedLog = p.packet.getZxid();
         } finally {

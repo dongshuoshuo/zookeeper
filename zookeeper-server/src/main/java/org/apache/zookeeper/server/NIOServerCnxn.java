@@ -205,6 +205,7 @@ public class NIOServerCnxn extends ServerCnxn {
             if (!initialized) {
                 readConnectRequest();
             } else {
+                //读请求信息
                 readRequest();
             }
             lenBuffer.clear();
@@ -229,16 +230,18 @@ public class NIOServerCnxn extends ServerCnxn {
     }
 
     /**
-     * Handles read/write IO on connection.
+     * Handles read/write IO on connection. 处理读写 i/o
      */
     void doIO(SelectionKey k) throws InterruptedException {
         try {
+            //如果io关闭
             if (isSocketOpen() == false) {
                 LOG.warn("trying to do i/o on a null socket for session:0x"
                          + Long.toHexString(sessionId));
 
                 return;
             }
+            //可读
             if (k.isReadable()) {
                 int rc = sock.read(incomingBuffer);
                 if (rc < 0) {
@@ -972,7 +975,7 @@ public class NIOServerCnxn extends ServerCnxn {
 
     /** Reads the first 4 bytes of lenBuffer, which could be true length or
      *  four letter word.
-     *
+     * 读前4个字节的bug
      * @param k selection key
      * @return true if length read, otw false (wasn't really the length)
      * @throws IOException if buffer size exceeds maxBuffer size
@@ -1101,7 +1104,7 @@ public class NIOServerCnxn extends ServerCnxn {
 
     /*
      * (non-Javadoc)
-     *
+     * 发送响应
      * @see org.apache.zookeeper.server.ServerCnxnIface#sendResponse(org.apache.zookeeper.proto.ReplyHeader,
      *      org.apache.jute.Record, java.lang.String)
      */

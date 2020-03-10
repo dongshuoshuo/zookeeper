@@ -102,12 +102,12 @@ public class ClientCnxn {
     private final CopyOnWriteArraySet<AuthData> authInfo = new CopyOnWriteArraySet<AuthData>();
 
     /**
-     * These are the packets that have been sent and are waiting for a response.
+     * These are the packets that have been sent and are waiting for a response. 等待响应的
      */
     private final LinkedList<Packet> pendingQueue = new LinkedList<Packet>();
 
     /**
-     * These are the packets that need to be sent.
+     * These are the packets that need to be sent. 需要发送的
      */
     private final LinkedList<Packet> outgoingQueue = new LinkedList<Packet>();
 
@@ -436,6 +436,10 @@ public class ClientCnxn {
             setDaemon(true);
         }
 
+        /**
+         * -2 事件通知
+         * @param event
+         */
         public void queueEvent(WatchedEvent event) {
             if (event.getType() == EventType.None
                     && sessionState == event.getState()) {
@@ -443,7 +447,7 @@ public class ClientCnxn {
             }
             sessionState = event.getState();
 
-            // materialize the watchers based on the event
+            // materialize the watchers based on the event 根据这个事件进行反序列化
             WatcherSetEventPair pair = new WatcherSetEventPair(
                     watcher.materialize(event.getState(), event.getType(),
                             event.getPath()),
@@ -629,7 +633,7 @@ public class ClientCnxn {
         if (p.watchRegistration != null) {
             p.watchRegistration.register(p.replyHeader.getErr());
         }
-
+        //将packet状态改为finished
         if (p.cb == null) {
             synchronized (p) {
                 p.finished = true;
@@ -746,7 +750,7 @@ public class ClientCnxn {
                 return;
             }
             if (replyHdr.getXid() == -1) {
-                // -1 means notification
+                // -1 means notification  对于事件通知
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Got notification sessionid:0x"
                         + Long.toHexString(sessionId));
@@ -790,6 +794,7 @@ public class ClientCnxn {
             }
 
             Packet packet;
+            //等待响应的packet
             synchronized (pendingQueue) {
                 if (pendingQueue.size() == 0) {
                     throw new IOException("Nothing in the queue, but got "
@@ -829,6 +834,7 @@ public class ClientCnxn {
                             + Long.toHexString(sessionId) + ", packet:: " + packet);
                 }
             } finally {
+                //完成packet
                 finishPacket(packet);
             }
         }
@@ -1417,10 +1423,14 @@ public class ClientCnxn {
     public ReplyHeader submitRequest(RequestHeader h, Record request,
             Record response, WatchRegistration watchRegistration)
             throws InterruptedException {
+        //构建回复header
         ReplyHeader r = new ReplyHeader();
+        //构建packet 网络传输
         Packet packet = queuePacket(h, r, request, response, null, null, null,
                     null, watchRegistration);
+        //锁住队列的packet
         synchronized (packet) {
+            //如果没有完成, 一直等待
             while (!packet.finished) {
                 packet.wait();
             }
@@ -1458,7 +1468,9 @@ public class ClientCnxn {
         // Note that we do not generate the Xid for the packet yet. It is
         // generated later at send-time, by an implementation of ClientCnxnSocket::doIO(),
         // where the packet is actually sent.
+        //搜猪outgoingqueue
         synchronized (outgoingQueue) {
+            //构建packet
             packet = new Packet(h, r, request, response, watchRegistration);
             packet.cb = cb;
             packet.ctx = ctx;
@@ -1472,6 +1484,7 @@ public class ClientCnxn {
                 if (h.getType() == OpCode.closeSession) {
                     closing = true;
                 }
+                //发送队列放入packet
                 outgoingQueue.add(packet);
             }
         }

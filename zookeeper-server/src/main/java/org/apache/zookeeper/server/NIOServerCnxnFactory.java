@@ -18,6 +18,9 @@
 
 package org.apache.zookeeper.server;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -26,14 +29,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.*;
 
 public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(NIOServerCnxnFactory.class);
@@ -79,11 +75,14 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
     Thread thread;
     @Override
     public void configure(InetSocketAddress addr, int maxcc) throws IOException {
+        //加载SASL配置
         configureSaslLogin();
-
+        //维护一个守护线程
         thread = new ZooKeeperThread(this, "NIOServerCxn.Factory:" + addr);
         thread.setDaemon(true);
+        //最大客户端连接数 默认60
         maxClientCnxns = maxcc;
+        //服务端开启socket
         this.ss = ServerSocketChannel.open();
         ss.socket().setReuseAddress(true);
         LOG.info("binding to port " + addr);
@@ -197,7 +196,11 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
         }
     }
 
+    /**
+     * 不断处理io请求
+     */
     public void run() {
+        //不断的从socket取数据
         while (!ss.socket().isClosed()) {
             try {
                 selector.select(1000);
@@ -230,6 +233,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory implements Runnable 
                         }
                     } else if ((k.readyOps() & (SelectionKey.OP_READ | SelectionKey.OP_WRITE)) != 0) {
                         NIOServerCnxn c = (NIOServerCnxn) k.attachment();
+                        //处理网络io
                         c.doIO(k);
                     } else {
                         if (LOG.isDebugEnabled()) {

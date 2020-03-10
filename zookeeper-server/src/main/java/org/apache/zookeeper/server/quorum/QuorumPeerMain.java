@@ -17,26 +17,25 @@
  */
 package org.apache.zookeeper.server.quorum;
 
-import java.io.File;
-import java.io.IOException;
-
-import javax.management.JMException;
-import javax.security.sasl.SaslException;
-
 import org.apache.yetus.audience.InterfaceAudience;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.jmx.ManagedUtil;
+import org.apache.zookeeper.server.DatadirCleanupManager;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.ZKDatabase;
-import org.apache.zookeeper.server.DatadirCleanupManager;
 import org.apache.zookeeper.server.ZooKeeperServerMain;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
 import org.apache.zookeeper.server.quorum.QuorumPeerConfig.ConfigException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.management.JMException;
+import javax.security.sasl.SaslException;
+import java.io.File;
+import java.io.IOException;
 
 /**
  *
- * <h2>Configuration file</h2>
+ * <h2>Configuration file</h2>  Zookeeper 服务端启动的入口
  *
  * When the main() method of this class is used to start the program, the first
  * argument is used as a path to the config file, which will be used to obtain
@@ -78,6 +77,7 @@ public class QuorumPeerMain {
     public static void main(String[] args) {
         QuorumPeerMain main = new QuorumPeerMain();
         try {
+            //初始化并运行
             main.initializeAndRun(args);
         } catch (IllegalArgumentException e) {
             LOG.error("Invalid arguments, exiting abnormally", e);
@@ -99,29 +99,39 @@ public class QuorumPeerMain {
     protected void initializeAndRun(String[] args)
         throws ConfigException, IOException
     {
+        //声明 初始化服务端配置
         QuorumPeerConfig config = new QuorumPeerConfig();
+        //如果args只有一个
         if (args.length == 1) {
+            //根据配置文件地址去解析
             config.parse(args[0]);
         }
 
-        // Start and schedule the the purge task
+        // Start and schedule the the purge task 创建并启动历史文件清理器
         DatadirCleanupManager purgeMgr = new DatadirCleanupManager(config
                 .getDataDir(), config.getDataLogDir(), config
                 .getSnapRetainCount(), config.getPurgeInterval());
         purgeMgr.start();
 
         if (args.length == 1 && config.servers.size() > 0) {
+            //集群模式
             runFromConfig(config);
         } else {
             LOG.warn("Either no config or no quorum defined in config, running "
                     + " in standalone mode");
-            // there is only server in the quorum -- run as standalone
+            // there is only server in the quorum -- run as standalone 单机模式
             ZooKeeperServerMain.main(args);
         }
     }
 
+    /**
+     * 集群模式启动
+     * @param config
+     * @throws IOException
+     */
     public void runFromConfig(QuorumPeerConfig config) throws IOException {
       try {
+          //注册log4j JMX
           ManagedUtil.registerLog4jMBeans();
       } catch (JMException e) {
           LOG.warn("Unable to register log4j JMX control", e);
@@ -129,13 +139,16 @@ public class QuorumPeerMain {
   
       LOG.info("Starting quorum peer");
       try {
+          //创建ServerCnxnFactory 工厂模式 默认NIOServerCnxnFactory
           ServerCnxnFactory cnxnFactory = ServerCnxnFactory.createFactory();
+          //配置ServerCnxnFactory 开启socket
           cnxnFactory.configure(config.getClientPortAddress(),
                                 config.getMaxClientCnxns());
-
+          //创建QuorumPeer
           quorumPeer = getQuorumPeer();
-
+          //QuorumPeer赋值
           quorumPeer.setQuorumPeers(config.getServers());
+          //初始化FileTxnSnapLog
           quorumPeer.setTxnFactory(new FileTxnSnapLog(
                   new File(config.getDataLogDir()),
                   new File(config.getDataDir())));
@@ -165,8 +178,9 @@ public class QuorumPeerMain {
           }
 
           quorumPeer.setQuorumCnxnThreadsSize(config.quorumCnxnThreadsSize);
+          //又判断初始化 authserver authlearner
           quorumPeer.initialize();
-
+          //启动
           quorumPeer.start();
           quorumPeer.join();
       } catch (InterruptedException e) {
@@ -177,6 +191,7 @@ public class QuorumPeerMain {
 
     // @VisibleForTesting
     protected QuorumPeer getQuorumPeer() throws SaslException {
+        //创建一个
         return new QuorumPeer();
     }
 }

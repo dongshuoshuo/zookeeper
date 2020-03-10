@@ -18,18 +18,18 @@
 
 package org.apache.zookeeper.server;
 
-import java.io.PrintWriter;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.Map.Entry;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.EventType;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.PrintWriter;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * This class manages watches. It allows watches to be associated with a string
@@ -37,10 +37,14 @@ import org.apache.zookeeper.Watcher.Event.KeeperState;
  */
 public class WatchManager {
     private static final Logger LOG = LoggerFactory.getLogger(WatchManager.class);
-
+    /**
+     * path 对应的watcher
+     */
     private final HashMap<String, HashSet<Watcher>> watchTable =
         new HashMap<String, HashSet<Watcher>>();
-
+    /**
+     * watcher对应的 path
+     */
     private final HashMap<Watcher, HashSet<String>> watch2Paths =
         new HashMap<Watcher, HashSet<String>>();
 

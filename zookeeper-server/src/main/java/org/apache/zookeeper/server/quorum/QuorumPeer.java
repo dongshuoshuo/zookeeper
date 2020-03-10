@@ -18,31 +18,6 @@
 package org.apache.zookeeper.server.quorum;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.security.sasl.SaslException;
-
 import org.apache.zookeeper.common.AtomicFileOutputStream;
 import org.apache.zookeeper.jmx.MBeanRegistry;
 import org.apache.zookeeper.jmx.ZKMBeanInfo;
@@ -51,18 +26,19 @@ import org.apache.zookeeper.server.ZKDatabase;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.ZooKeeperThread;
 import org.apache.zookeeper.server.persistence.FileTxnSnapLog;
-import org.apache.zookeeper.server.quorum.auth.QuorumAuth;
-import org.apache.zookeeper.server.quorum.auth.QuorumAuthLearner;
-import org.apache.zookeeper.server.quorum.auth.QuorumAuthServer;
-import org.apache.zookeeper.server.quorum.auth.SaslQuorumAuthLearner;
-import org.apache.zookeeper.server.quorum.auth.SaslQuorumAuthServer;
-import org.apache.zookeeper.server.quorum.auth.NullQuorumAuthLearner;
-import org.apache.zookeeper.server.quorum.auth.NullQuorumAuthServer;
+import org.apache.zookeeper.server.quorum.auth.*;
 import org.apache.zookeeper.server.quorum.flexible.QuorumMaj;
 import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
 import org.apache.zookeeper.server.util.ZxidUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.security.sasl.SaslException;
+import java.io.*;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * This class manages the quorum protocol. There are three states this server
@@ -570,6 +546,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     protected QuorumPeer() throws SaslException {
         super("QuorumPeer");
         quorumStats = new QuorumStats(this);
+        //初始化authserver 和 authlearner
         initialize();
     }
     
@@ -609,6 +586,10 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         else this.quorumConfig = quorumConfig;
     }
 
+    /**
+     * 初始化auth配置
+     * @throws SaslException
+     */
     public void initialize() throws SaslException {
         // init quorum auth server & learner
         if (isQuorumSaslAuthEnabled()) {
@@ -633,8 +614,11 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     
     @Override
     public synchronized void start() {
+        //加载数据
         loadDataBase();
-        cnxnFactory.start();        
+        //开启线程
+        cnxnFactory.start();
+        //开始leader选举 最大不同
         startLeaderElection();
         super.start();
     }
@@ -643,9 +627,10 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         File updating = new File(getTxnFactory().getSnapDir(),
                                  UPDATING_EPOCH_FILENAME);
 		try {
+		    //加载ZKDatabase
             zkDb.loadDataBase();
 
-            // load the epochs
+            // load the epochs 加载zxid 和 纪元
             long lastProcessedZxid = zkDb.getDataTree().lastProcessedZxid;
     		long epochOfZxid = ZxidUtils.getEpochFromZxid(lastProcessedZxid);
             try {
@@ -701,8 +686,13 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         responder.running = false;
         responder.interrupt();
     }
+
+    /**
+     * 开始进行leader选举
+     */
     synchronized public void startLeaderElection() {
     	try {
+    	    //当前选票
     		currentVote = new Vote(myid, getLastLoggedZxid(), getCurrentEpoch());
     	} catch(IOException e) {
     		RuntimeException re = new RuntimeException(e.getMessage());
@@ -727,6 +717,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                 throw new RuntimeException(e);
             }
         }
+        //创建选票算法
         this.electionAlg = createElectionAlgorithm(electionType);
     }
     
@@ -807,6 +798,11 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                 this, new ZooKeeperServer.BasicDataTreeBuilder(), this.zkDb));
     }
 
+    /**
+     * 策略工厂 目前只剩下 FastLeaderElection
+     * @param electionAlgorithm
+     * @return
+     */
     protected Election createElectionAlgorithm(int electionAlgorithm){
         Election le=null;
                 

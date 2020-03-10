@@ -18,23 +18,6 @@
 
 package org.apache.zookeeper.server;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-
-import javax.security.sasl.SaslException;
-
 import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.Record;
@@ -47,13 +30,7 @@ import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.StatPersisted;
 import org.apache.zookeeper.jmx.MBeanRegistry;
-import org.apache.zookeeper.proto.AuthPacket;
-import org.apache.zookeeper.proto.ConnectRequest;
-import org.apache.zookeeper.proto.ConnectResponse;
-import org.apache.zookeeper.proto.GetSASLRequest;
-import org.apache.zookeeper.proto.ReplyHeader;
-import org.apache.zookeeper.proto.RequestHeader;
-import org.apache.zookeeper.proto.SetSASLResponse;
+import org.apache.zookeeper.proto.*;
 import org.apache.zookeeper.server.DataTree.ProcessTxnResult;
 import org.apache.zookeeper.server.RequestProcessor.RequestProcessorException;
 import org.apache.zookeeper.server.ServerCnxn.CloseRequestException;
@@ -67,6 +44,13 @@ import org.apache.zookeeper.txn.CreateSessionTxn;
 import org.apache.zookeeper.txn.TxnHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.security.sasl.SaslException;
+import java.io.*;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 
 /**
@@ -409,23 +393,31 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
     }
     
     public synchronized void startup() {
+        //创建session管理
         if (sessionTracker == null) {
             createSessionTracker();
         }
+        //开启会话超时管理
         startSessionTracker();
+        //初始化请求处理器
         setupRequestProcessors();
-
+        //注册JMX
         registerJMX();
 
         setState(State.RUNNING);
         notifyAll();
     }
 
+    /**
+     * 初始化请求处理器
+     */
     protected void setupRequestProcessors() {
         RequestProcessor finalProcessor = new FinalRequestProcessor(this);
         RequestProcessor syncProcessor = new SyncRequestProcessor(this,
                 finalProcessor);
+        //启动同步处理器
         ((SyncRequestProcessor)syncProcessor).start();
+        //预处理处理器
         firstProcessor = new PrepRequestProcessor(this, syncProcessor);
         ((PrepRequestProcessor)firstProcessor).start();
     }
@@ -724,12 +716,17 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         Request si = new Request(cnxn, sessionId, xid, type, bb, authInfo);
         submitRequest(si);
     }
-    
+
+    /**
+     * 提交request
+     * @param si
+     */
     public void submitRequest(Request si) {
+        //第一个处理器为null
         if (firstProcessor == null) {
             synchronized (this) {
                 try {
-                    // Since all requests are passed to the request
+                    // Since all requests are passed to the request 所有的requests都要经过processror
                     // processor it should wait for setting up the request
                     // processor chain. The state will be updated to RUNNING
                     // after the setup.
@@ -745,9 +742,12 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
             }
         }
         try {
+            //会话是否还在连接中
             touch(si.cnxn);
+            //判断请求是否合法
             boolean validpacket = Request.isValid(si.type);
             if (validpacket) {
+                //执行对
                 firstProcessor.processRequest(si);
                 if (si.cnxn != null) {
                     incInProcess();
@@ -959,6 +959,12 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         return false; 
     }
 
+    /**
+     * 处理收到的io
+     * @param cnxn
+     * @param incomingBuffer
+     * @throws IOException
+     */
     public void processPacket(ServerCnxn cnxn, ByteBuffer incomingBuffer) throws IOException {
         // We have the request, now process and setup for next
         InputStream bais = new ByteBufferInputStream(incomingBuffer);
@@ -1018,6 +1024,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
                 return;
             }
             else {
+                //构建request
                 Request si = new Request(cnxn, cnxn.getSessionId(), h.getXid(),
                   h.getType(), incomingBuffer, cnxn.getAuthInfo());
                 si.setOwner(ServerCnxn.me);

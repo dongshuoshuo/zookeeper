@@ -17,14 +17,16 @@
  */
 
 package org.apache.zookeeper.server.persistence;
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import org.apache.jute.BinaryInputArchive;
+import org.apache.jute.BinaryOutputArchive;
+import org.apache.jute.InputArchive;
+import org.apache.jute.OutputArchive;
+import org.apache.zookeeper.server.DataTree;
+import org.apache.zookeeper.server.util.SerializeUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,15 +34,6 @@ import java.util.Map;
 import java.util.zip.Adler32;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
-
-import org.apache.jute.BinaryInputArchive;
-import org.apache.jute.BinaryOutputArchive;
-import org.apache.jute.InputArchive;
-import org.apache.jute.OutputArchive;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.zookeeper.server.DataTree;
-import org.apache.zookeeper.server.util.SerializeUtils;
 
 /**
  * This class implements the snapshot interface.
@@ -71,7 +64,7 @@ public class FileSnap implements SnapShot {
             throws IOException {
         // we run through 100 snapshots (not all of them)
         // if we cannot get it running within 100 snapshots
-        // we should  give up
+        // we should  give up  取100个快照进行恢复
         List<File> snapList = findNValidSnapshots(100);
         if (snapList.size() == 0) {
             return -1L;
@@ -178,6 +171,7 @@ public class FileSnap implements SnapShot {
     }
 
     /**
+     * 找出最近n个快照,不做检查快照是否合法
      * find the last n snapshots. this does not have
      * any checks if the snapshot might be valid or not
      * @param the number of most recent snapshots

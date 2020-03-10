@@ -18,15 +18,16 @@
 
 package org.apache.zookeeper.server;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
+ * 这个类用于管理清理快照和相应的日志
  * This class manages the cleanup of snapshots and corresponding transaction
  * logs by scheduling the auto purge task with the specified
  * 'autopurge.purgeInterval'. It keeps the most recent
@@ -133,6 +134,9 @@ public class DatadirCleanupManager {
             snapRetainCount = count;
         }
 
+        /**
+         * 线程去清除
+         */
         @Override
         public void run() {
             LOG.info("Purge task started.");

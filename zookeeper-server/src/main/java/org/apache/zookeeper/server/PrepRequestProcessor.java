@@ -18,57 +18,31 @@
 
 package org.apache.zookeeper.server;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import org.apache.jute.Record;
 import org.apache.jute.BinaryOutputArchive;
-
-import org.apache.zookeeper.common.Time;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.KeeperException;
+import org.apache.jute.Record;
+import org.apache.zookeeper.*;
 import org.apache.zookeeper.KeeperException.BadArgumentsException;
-import org.apache.zookeeper.MultiTransactionRecord;
-import org.apache.zookeeper.Op;
-import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.common.PathUtils;
+import org.apache.zookeeper.common.Time;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.StatPersisted;
-import org.apache.zookeeper.proto.CreateRequest;
-import org.apache.zookeeper.proto.DeleteRequest;
-import org.apache.zookeeper.proto.SetACLRequest;
-import org.apache.zookeeper.proto.SetDataRequest;
-import org.apache.zookeeper.proto.CheckVersionRequest;
+import org.apache.zookeeper.proto.*;
 import org.apache.zookeeper.server.ZooKeeperServer.ChangeRecord;
 import org.apache.zookeeper.server.auth.AuthenticationProvider;
 import org.apache.zookeeper.server.auth.ProviderRegistry;
 import org.apache.zookeeper.server.quorum.Leader.XidRolloverException;
-import org.apache.zookeeper.txn.CreateSessionTxn;
-import org.apache.zookeeper.txn.CreateTxn;
-import org.apache.zookeeper.txn.DeleteTxn;
-import org.apache.zookeeper.txn.ErrorTxn;
-import org.apache.zookeeper.txn.SetACLTxn;
-import org.apache.zookeeper.txn.SetDataTxn;
-import org.apache.zookeeper.txn.CheckVersionTxn;
-import org.apache.zookeeper.txn.Txn;
-import org.apache.zookeeper.txn.MultiTxn;
-import org.apache.zookeeper.txn.TxnHeader;
+import org.apache.zookeeper.txn.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * This request processor is generally at the start of a RequestProcessor
@@ -116,10 +90,15 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
     public static void setFailCreate(boolean b) {
         failCreate = b;
     }
+
+    /**
+     * 线程处理
+     */
     @Override
     public void run() {
         try {
             while (true) {
+                //取出提交的request
                 Request request = submittedRequests.take();
                 long traceMask = ZooTrace.CLIENT_REQUEST_TRACE_MASK;
                 if (request.type == OpCode.ping) {
@@ -131,6 +110,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 if (Request.requestOfDeath == request) {
                     break;
                 }
+                //预处理
                 pRequest(request);
             }
         } catch (RequestProcessorException e) {
@@ -149,6 +129,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         synchronized (zks.outstandingChanges) {
             lastChange = zks.outstandingChangesForPath.get(path);
             if (lastChange == null) {
+                //根据path获取DataNode
                 DataNode n = zks.getZKDatabase().getNode(path);
                 if (n != null) {
                     Set<String> children;
@@ -318,6 +299,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
     protected void pRequest2Txn(int type, long zxid, Request request, Record record, boolean deserialize)
         throws KeeperException, IOException, RequestProcessorException
     {
+        //构建TxnHeader
         request.hdr = new TxnHeader(request.sessionId, request.cxid, zxid,
                                     Time.currentWallTime(), type);
 
@@ -407,17 +389,20 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                         null, -1, null));
                 break;
             case OpCode.setData:
+                //检查session
                 zks.sessionTracker.checkSession(request.sessionId, request.getOwner());
                 SetDataRequest setDataRequest = (SetDataRequest)record;
                 if(deserialize)
                     ByteBufferInputStream.byteBuffer2Record(request.request, setDataRequest);
                 path = setDataRequest.getPath();
                 validatePath(path, request.sessionId);
+                //获取path对应的changeRecord
                 nodeRecord = getRecordForPath(path);
                 checkACL(zks, nodeRecord.acl, ZooDefs.Perms.WRITE,
                         request.authInfo);
                 version = setDataRequest.getVersion();
                 int currentVersion = nodeRecord.stat.getVersion();
+                //cas判断版本
                 if (version != -1 && version != currentVersion) {
                     throw new KeeperException.BadVersionException(path);
                 }
@@ -425,6 +410,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 request.txn = new SetDataTxn(path, setDataRequest.getData(), version);
                 nodeRecord = nodeRecord.duplicate(request.hdr.getZxid());
                 nodeRecord.stat.setVersion(version);
+                //将构建的信息放入outstanding
                 addChangeRecord(nodeRecord);
                 break;
             case OpCode.setACL:
@@ -510,6 +496,12 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         }
     }
 
+    /**
+     * 验证path的合法性
+     * @param path
+     * @param sessionId
+     * @throws BadArgumentsException
+     */
     private void validatePath(String path, long sessionId) throws BadArgumentsException {
         try {
             PathUtils.validatePath(path);
@@ -523,7 +515,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
     /**
      * This method will be called inside the ProcessRequestThread, which is a
      * singleton, so there will be a single thread calling this code.
-     *
+     * 这个方法会被内部的额processRequestThread线程调用,是单利的 所以只会单线程调用
      * @param request
      */
     @SuppressWarnings("unchecked")
@@ -534,6 +526,7 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         request.txn = null;
         
         try {
+            //判断请求的类型
             switch (request.type) {
                 case OpCode.create:
                 CreateRequest createRequest = new CreateRequest();
@@ -760,6 +753,10 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         return acl.size() > 0;
     }
 
+    /**
+     * 将request放入 summitedRequests中
+     * @param request
+     */
     public void processRequest(Request request) {
         // request.addRQRec(">prep="+zks.outstandingChanges.size());
         submittedRequests.add(request);

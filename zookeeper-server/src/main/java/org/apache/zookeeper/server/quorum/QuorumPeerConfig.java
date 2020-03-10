@@ -18,24 +18,7 @@
 
 package org.apache.zookeeper.server.quorum;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Map.Entry;
-
 import org.apache.yetus.audience.InterfaceAudience;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
-
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.apache.zookeeper.server.quorum.QuorumPeer.LearnerType;
 import org.apache.zookeeper.server.quorum.QuorumPeer.QuorumServer;
@@ -43,6 +26,18 @@ import org.apache.zookeeper.server.quorum.auth.QuorumAuth;
 import org.apache.zookeeper.server.quorum.flexible.QuorumHierarchical;
 import org.apache.zookeeper.server.quorum.flexible.QuorumMaj;
 import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import java.io.*;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
 
 @InterfaceAudience.Public
 public class QuorumPeerConfig {
@@ -126,7 +121,7 @@ public class QuorumPeerConfig {
     }
 
     /**
-     * Parse a ZooKeeper configuration file
+     * Parse a ZooKeeper configuration file 解析Zookeeper配置文件
      * @param path the patch of the configuration file
      * @throws ConfigException error processing configuration
      */
@@ -136,11 +131,12 @@ public class QuorumPeerConfig {
         LOG.info("Reading configuration from: " + configFile);
 
         try {
+            //如果配置文件未找到
             if (!configFile.exists()) {
                 throw new IllegalArgumentException(configFile.toString()
                         + " file is missing");
             }
-
+            //读取配置文件信息
             Properties cfg = new Properties();
             FileInputStream in = new FileInputStream(configFile);
             try {
@@ -148,7 +144,7 @@ public class QuorumPeerConfig {
             } finally {
                 in.close();
             }
-
+            //解析配置文件到QuorumPeerConfig中去
             parseProperties(cfg);
         } catch (IOException e) {
             throw new ConfigException("Error processing " + path, e);
@@ -158,7 +154,7 @@ public class QuorumPeerConfig {
     }
 
     /**
-     * Parse config from a Properties.
+     * Parse config from a Properties. 从配置文件中解析配置
      * @param zkProp Properties to parse from.
      * @throws IOException
      * @throws ConfigException

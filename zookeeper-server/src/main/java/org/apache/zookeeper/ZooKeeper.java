@@ -150,7 +150,7 @@ public class ZooKeeper {
 
         /* (non-Javadoc)
          * @see org.apache.zookeeper.ClientWatchManager#materialize(Event.KeeperState, 
-         *                                                        Event.EventType, java.lang.String)
+         *             如果是节点变更会把watcher删除的                                           Event.EventType, java.lang.String)
          */
         @Override
         public Set<Watcher> materialize(Watcher.Event.KeeperState state,
@@ -1204,23 +1204,29 @@ public class ZooKeeper {
     public byte[] getData(final String path, Watcher watcher, Stat stat)
         throws KeeperException, InterruptedException
      {
+         //验证path合法性
         final String clientPath = path;
         PathUtils.validatePath(clientPath);
 
         // the watch contains the un-chroot path
         WatchRegistration wcb = null;
+        //如果watcher不为空 注册DataWatchRegistration
         if (watcher != null) {
             wcb = new DataWatchRegistration(watcher, clientPath);
         }
 
         final String serverPath = prependChroot(clientPath);
-
+        //构建请求header
         RequestHeader h = new RequestHeader();
+        //类型type 为getData
         h.setType(ZooDefs.OpCode.getData);
+        //request类型为GetDataRequest
         GetDataRequest request = new GetDataRequest();
         request.setPath(serverPath);
+        //是否 设置watch
         request.setWatch(watcher != null);
         GetDataResponse response = new GetDataResponse();
+        //clientcnxn socket提交请求 阻塞等待响应
         ReplyHeader r = cnxn.submitRequest(h, request, response, wcb);
         if (r.getErr() != 0) {
             throw KeeperException.create(KeeperException.Code.get(r.getErr()),
@@ -1252,6 +1258,7 @@ public class ZooKeeper {
      */
     public byte[] getData(String path, boolean watch, Stat stat)
             throws KeeperException, InterruptedException {
+        //获取getData时 ,watch为true 会将new Zookeeper的watch传入进来
         return getData(path, watch ? watchManager.defaultWatcher : null, stat);
     }
 
